@@ -1,0 +1,1078 @@
+---
+title: "Using Machine Learning to Predict March Madness Tournament"
+author:
+- Romtin Toranji (5235684)
+- Hans Christensen (5150446)
+- Kumman Liu (5699186)
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Introduction
+
+The goal of our project is to determine the winner of the NCAA March Madness
+tournament using machine learning. We can do this by first predicting the winner of each game individually. The importance behind this project is that we can make a lot of money from correctly predicting the tournament as ESPN offers 1 Million dollars to anyone who can correctly predict the entire tournament. Also, correctly predicting the tournament has a 1 in 9,223,372,036,854,775,808 or $$ (\frac{1}{2})^{63} $$ chance assuming you have a 50% chance of correctly guessing each game. We believe we can build a model to give us the best chance at correctly predicting the entire tournament. It is already known that each team does not have the same probability of winning the tournament as stronger top seeded teams play weaker bottom seeded teams to start the tournament. A lot of confounding variables such as player injuries and hot/cold streaks can change the tournament drastically as many teams rely on star players or perimeter shooting.
+
+Our research question is how accurately can we predict the results of the NCAA March Madness Tournament. 
+
+# Data
+
+Our Dataset was retrieved from Kaggle’s 2020 NCAA March Madness Machine Learning Competition. The dataset we used featured the every teams statistics for every game played during the regular season alongside the March Madness tournament along with the winning teams ID and losing teams ID where every team had a 4 digit ID corresponding to a school’s name. There was no missing data in the dataset. Since the data was given in a CSV format in Excel, we used Pivot Tables to combine all of the statistics by each teams unique Team ID to create an average of all the statistics. So, for each team, we created an average of all of our quantitative variables for each teams wins and losses by using the winning teams ID and losing teams ID and retrieving their respective data from each game played. We then counted each team's wins and losses to assign each team an overall record for the regular season. However, a problem occurred when a certain team either went undefeated during the season or did not have any wins during the season. The more common case was a team going undefeated during the regular season which caused the Team ID to not have data for games lost, so we could not create losing statistics for the team during the regular season. To get around this, we created an extra row with all 0’s for the undefeated team to have all of their losing statistics equal to 0. This allowed us to compute an undefeated regular season team’s losing statistics (all 0’s because they never lost) without affecting any true values.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(digits = 4) 
+```
+
+```{r, include = FALSE}
+set.seed(2020)
+reg_season <- read.csv("MRegularSeasonCompactResults.csv")
+
+setwd("~/Downloads")
+s2019 <- read.csv("2019 Results.csv")
+s2018 <- read.csv("2018 Results.csv")
+```
+
+```{r, include = FALSE}
+# Data Manipulation
+# Create an average of each statistic by combining win statistic and loss statistics 
+s2019$Average.of.PF  <- (((s2019$Losses * s2019$Average.of.LPF) + (s2019$Wins * s2019$Average.of.WPF))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.Blk <- (((s2019$Losses * s2019$Average.of.LBlk) + (s2019$Wins * s2019$Average.of.WBlk))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.Stl <- (((s2019$Losses * s2019$Average.of.LStl) + (s2019$Wins * s2019$Average.of.WStl))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.TO <- (((s2019$Losses * s2019$Average.of.LTO) + (s2019$Wins * s2019$Average.of.WTO))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.Ast <- (((s2019$Losses * s2019$Average.of.LAst) + (s2019$Wins * s2019$Average.of.WAst))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.DR <- (((s2019$Losses * s2019$Average.of.LDR) + (s2019$Wins * s2019$Average.of.WDR))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.OR <- (((s2019$Losses * s2019$Average.of.LOR) + (s2019$Wins * s2019$Average.of.WOR))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.FTA <- (((s2019$Losses * s2019$Average.of.LFTA) + (s2019$Wins * s2019$Average.of.WFTA))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.FTM <- (((s2019$Losses * s2019$Average.of.LFTM) + (s2019$Wins * s2019$Average.of.WFTM))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.FGA3 <- (((s2019$Losses * s2019$Average.of.LFGA3) + (s2019$Wins * s2019$Average.of.WFGA3))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.FGM3 <- (((s2019$Losses * s2019$Average.of.LFGM3) + (s2019$Wins * s2019$Average.of.WFGM3))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.FGA <- (((s2019$Losses * s2019$Average.of.LFGA) + (s2019$Wins * s2019$Average.of.WFGA))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.FGM <- (((s2019$Losses * s2019$Average.of.LFGM) + (s2019$Wins * s2019$Average.of.WFGM))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.PPG  <- (((s2019$Losses * s2019$Average.of.LScore) + (s2019$Wins * s2019$Average.of.WScore))/(s2019$Wins + s2019$Losses))
+s2019$W.Per  <- (s2019$Wins)/(s2019$Wins + s2019$Losses)
+```
+
+Our data set is the regular season statistics for each team.
+```{r}
+head(s2019)
+```
+
+# Variables
+
+Our dataset contains 14 variables and 5,463 observations. Our Qualitative variables included WLoc (The winning teams location categorized by Neutral, Home, or Away), WTeamID, LTeamID, and Season (given in the current year e.g. 2016). The quantitative statistics provided in the dataset were WFGM (Winning teams field goals made) , LFGM (losing teams field goals made) , WFGA , LFGA , along with other common basketball statistics such as Assists, Turnovers, 3 Pointers Made, 3 Pointers Attempted, Offensive and Defensive Rebounds, Steals, Blocks, and Personal Fouls. All of the quantitative statistics were counted for each game played during the Regular Season and were split by the winning and losing team of each regular season game. We created a season average by adding each teams winning statistics multiplied by their wins plus each teams losing statistics multiplied by their losses, and then divided by their total wins plus losses. For example, in calculating a teams average PPG (points per game) during the season, we took 
+
+$$ \frac{(Average Points Per Win \times Number of Wins) + (Average Points Per Loss \times Number of Losses)}{Number of Wins + Number of Losses} $$
+
+We used this method to compute the Per Game statistics for each numerical variable. After computing per game statistics for each team, we now have normalized variables that can be compared between each team to determine each teams success in the tournament.
+
+# Methods
+
+Firstly, and most importantly, we must understand that player and coach turnover between NCAA basketball seasons is rather high due to the “One-and-Done” rule implemented by the NBA. This rule states that players must play at least one year of NCAA basketball before signing a rookie contract with the NBA. Since the best college players tend to move on to the NBA as soon as possible, a large percentage of the best NCAA players only play one year for their college teams. Therefore, teams change quite drastically every year and as a result, we can’t use the same model from the previous years. For example, Loyola went to the final four in 2018 and did not even make the tournament in 2019. This was a result of the team losing a few of their key players because the athletes were graduating, heading to the National Basketball Association (NBA), injuries, etc. 
+
+Training, Test, and Validation Sets
+
+In our analysis, we chose not to use a validation set because our parameters are the in-season averages for each of the teams. Since we calculate a model for each individual season it would not be practical to split up our analysis of each season into a training and validation set. This would not work because we are using each NCAA regular season to predict the NCAA postseason tournament. So, we use the NCAA regular season as our training set and use our results to predict the March Madness tournament, our test set.
+
+```{r, include = FALSE}
+s2018$Average.of.PF  <- (((s2018$Losses * s2018$Average.of.LPF) + (s2018$Wins * s2018$Average.of.WPF))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.Blk <- (((s2018$Losses * s2018$Average.of.LBlk) + (s2018$Wins * s2018$Average.of.WBlk))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.Stl <- (((s2018$Losses * s2018$Average.of.LStl) + (s2018$Wins * s2018$Average.of.WStl))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.TO <- (((s2018$Losses * s2018$Average.of.LTO) + (s2018$Wins * s2018$Average.of.WTO))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.Ast <- (((s2018$Losses * s2018$Average.of.LAst) + (s2018$Wins * s2018$Average.of.WAst))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.DR <- (((s2018$Losses * s2018$Average.of.LDR) + (s2018$Wins * s2018$Average.of.WDR))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.OR <- (((s2018$Losses * s2018$Average.of.LOR) + (s2018$Wins * s2018$Average.of.WOR))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.FTA <- (((s2018$Losses * s2018$Average.of.LFTA) + (s2018$Wins * s2018$Average.of.WFTA))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.FTM <- (((s2018$Losses * s2018$Average.of.LFTM) + (s2018$Wins * s2018$Average.of.WFTM))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.FGA3 <- (((s2018$Losses * s2018$Average.of.LFGA3) + (s2018$Wins * s2018$Average.of.WFGA3))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.FGM3 <- (((s2018$Losses * s2018$Average.of.LFGM3) + (s2018$Wins * s2018$Average.of.WFGM3))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.FGA <- (((s2018$Losses * s2018$Average.of.LFGA) + (s2018$Wins * s2018$Average.of.WFGA))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.FGM <- (((s2018$Losses * s2018$Average.of.LFGM) + (s2018$Wins * s2018$Average.of.WFGM))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.PPG  <- (((s2018$Losses * s2018$Average.of.LScore) + (s2018$Wins * s2018$Average.of.WScore))/(s2018$Wins + s2018$Losses))
+s2018$W.Per  <- (s2018$Wins)/(s2018$Wins + s2018$Losses)
+```
+
+# Data Analysis and Exploration
+
+Initial Data Analysis: Correlation Matrix
+
+```{r, include = FALSE}
+s2019_corr <- data.frame()[1:354,]
+s2019_corr$L <- s2019$Losses
+s2019_corr$W <- s2019$Wins
+s2019_corr$PPG <- s2019$Average.of.PPG
+s2019_corr$FGM <- s2019$Average.of.FGM
+s2019_corr$FGA <- s2019$Average.of.FGA
+s2019_corr$FGM3 <- s2019$Average.of.FGM3
+s2019_corr$FGA3 <- s2019$Average.of.FGA3
+s2019_corr$FTM <- s2019$Average.of.FTM
+s2019_corr$FTA <- s2019$Average.of.FTA
+s2019_corr$OR <- s2019$Average.of.OR
+s2019_corr$DR <- s2019$Average.of.DR
+s2019_corr$AST <- s2019$Average.of.Ast
+s2019_corr$TO <- s2019$Average.of.TO
+s2019_corr$STL <- s2019$Average.of.Stl
+s2019_corr$BLK <- s2019$Average.of.Blk
+s2019_corr$PF <- s2019$Average.of.PF
+res<- cor(s2019_corr, use="complete.obs", method="kendall")
+library(corrplot)
+```
+
+```{r}
+corrplot(res, type = "upper", order = "hclust",
+         tl.col = "black", tl.srt = 45)
+```
+
+From the correlation matrix, we see that Assists, Points Per Game, and Turnovers seem to have the highest correlation (absolute value) with wins. 
+
+Initial Data Analysis: Graphs
+
+We made boxplots of the three aforementioned important variables vs number of wins for the 2019 regular season. 
+
+Assists
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+astGraph <- s2019_corr %>%
+ 
+  # Add a new column called 'bin'
+  mutate( bin=cut_width(W, width=5, boundary=0) ) %>%
+ 
+  # plot
+  ggplot( aes(x=bin, y=AST) ) +
+    geom_boxplot(fill="#69b3a2") +
+    xlab("Wins")
+
+astGraph
+```
+
+Points Per Game
+
+```{r}
+ppgGraph <- s2019_corr %>%
+ 
+  # Add a new column called 'bin'
+  mutate( bin=cut_width(W, width=5, boundary=0) ) %>%
+ 
+  # plot
+  ggplot( aes(x=bin, y=PPG) ) +
+    geom_boxplot(fill="#69b3a2") +
+    xlab("Wins")
+ppgGraph
+```
+
+Turnovers
+
+```{r}
+turnoverGraph <- s2019_corr %>%
+ 
+  # Add a new column called 'bin'
+  mutate( bin=cut_width(W, width=5, boundary=0) ) %>%
+ 
+  # plot
+  ggplot( aes(x=bin, y=TO) ) +
+    geom_boxplot(fill="#69b3a2") +
+    xlab("Wins")
+turnoverGraph
+```
+
+Initial Data Analysis: Trying Linear Regression
+
+We first fit the data to a linear model fitting Wins against all of the variables in the dataset except for Wins, Losses, Win Percentage, Average Losing Score, Average Winning Score, number of overtimes played, and Team ID. We then used the summary function to get an idea of each variables effect on Wins. Predictors such as Points Per Game, Turnovers Per Game, and Turnovers Per Game were highly significant and we expected them to be important variables for our future methods. 
+
+```{r}
+lm_model_2019_w <-lm(s2019$Wins~.-Losses-W.Per -Average.of.LScore - Average.of.WScore - Average.of.NumOT -Average.of.NumOT.1 -Team.ID,s2019)
+summary(lm_model_2019_w)
+```
+
+The same was done for losses. 
+
+```{r}
+lm_model_2019_l <-lm(s2019$Losses~.-Wins-W.Per -Average.of.LScore - Average.of.WScore - Average.of.NumOT -Average.of.NumOT.1 - Team.ID,s2019)
+summary(lm_model_2019_l)
+```
+
+```{r, include = FALSE}
+reg_season_2019 <- reg_season[reg_season$Season == 2019,]
+head(reg_season_2019)
+reg_season_2019_matchups <- data.frame("WTeamID" = reg_season_2019$WTeamID,"LTeamID" = reg_season_2019$LTeamID)
+```
+
+```{r, include = FALSE}
+# Set response variable to 1, since in data set all are wins. 
+reg_season_2019_matchups$W <- 1
+
+# Get difference in statistics between the two teams for each match in the regular season
+for(i in 1:nrow(reg_season_2019_matchups)){
+    reg_season_2019_matchups$Average.of.LPF[i] <- (((s2019$Average.of.LPF[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LPF[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LBlk[i] <- (((s2019$Average.of.LBlk[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LBlk[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LStl[i] <- (((s2019$Average.of.LStl[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LStl[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LTO[i] <- (((s2019$Average.of.LTO[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LTO[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LAst[i] <- (((s2019$Average.of.LAst[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LAst[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LDR[i] <- (((s2019$Average.of.LDR[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LDR[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LOR[i] <- (((s2019$Average.of.LOR[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LOR[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LFTA[i] <- (((s2019$Average.of.LFTA[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LFTA[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LFTM[i] <- (((s2019$Average.of.LFTM[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LFTM[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LFGA3[i] <- (((s2019$Average.of.LFGA3[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LFGA3[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LFGM3[i] <- (((s2019$Average.of.LFGM3[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LFGM3[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LFGA[i] <- (((s2019$Average.of.LFGA[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LFGA[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LFGM[i] <- (((s2019$Average.of.LFGM[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LFGM[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.NumOT[i] <- (((s2019$Average.of.NumOT[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.NumOT[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LScore[i] <- (((s2019$Average.of.LScore[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LScore[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WScore[i] <- (((s2019$Average.of.WScore[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WScore[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.NumOT.1[i] <- (((s2019$Average.of.NumOT.1[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.NumOT.1[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WFGM[i] <- (((s2019$Average.of.WFGM[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WFGM[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WFGA[i] <- (((s2019$Average.of.WFGA[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WFGA[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WFGM3[i] <- (((s2019$Average.of.WFGM3[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WFGM3[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WFGA3[i] <- (((s2019$Average.of.WFGA3[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WFGA3[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WFTM[i] <- (((s2019$Average.of.WFTM[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WFTM[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WFTA[i] <- (((s2019$Average.of.WFTA[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WFTA[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WOR[i] <- (((s2019$Average.of.WOR[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WOR[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WDR[i] <- (((s2019$Average.of.WDR[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WDR[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WAst[i] <- (((s2019$Average.of.WAst[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WAst[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WTO[i] <- (((s2019$Average.of.WTO[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WTO[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WStl[i] <- (((s2019$Average.of.WStl[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WStl[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WBlk[i] <- (((s2019$Average.of.WBlk[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WBlk[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WPF[i] <- (((s2019$Average.of.WPF[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WPF[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.PF[i] <- (((s2019$Average.of.PF[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.PF[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.Blk[i] <- (((s2019$Average.of.Blk[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.Blk[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.Stl[i] <- (((s2019$Average.of.Stl[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.Stl[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.TO[i] <- (((s2019$Average.of.TO[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.TO[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.Ast[i] <- (((s2019$Average.of.Ast[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.Ast[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.DR[i] <- (((s2019$Average.of.DR[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.DR[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.OR[i] <- (((s2019$Average.of.OR[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.OR[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.FTA[i] <- (((s2019$Average.of.FTA[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.FTA[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.FTM[i] <- (((s2019$Average.of.FTM[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.FTM[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.FGA3[i] <- (((s2019$Average.of.FGA3[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.FGA3[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.FGM3[i] <- (((s2019$Average.of.FGM3[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.FGM3[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.FGA[i] <- (((s2019$Average.of.FGA[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.FGA[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.FGM[i] <- (((s2019$Average.of.FGM[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.FGM[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.PPG[i] <- (((s2019$Average.of.PPG[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.PPG[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$W.Per[i] <- (((s2019$W.Per[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$W.Per[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+}
+```
+
+```{r, include = FALSE}
+# Randomly change half of outcomes to losses and invert statistic differences so model works appropriately (so that we are not modeling on outcome of all wins)
+trainrows <- sample(nrow(reg_season_2019_matchups), nrow(reg_season_2019_matchups) * 0.5)
+winset <- reg_season_2019_matchups[trainrows,]
+loseset <- reg_season_2019_matchups[-trainrows,]
+# Invert differences in statistics
+
+loseset <- loseset %>%
+    mutate_if(is.numeric, funs(. * -1))
+# Change actual outcome to loss
+loseset$W <- 0
+train <- rbind(winset, loseset)
+```
+
+# Logistic Regression
+
+Next, we fit our data to a Logistic Regression model fitting Wins against all of our other variables. We use the glm function and set the parameter family=”Binomial” to compute a Logistic Regression model. This is our most basic model with our highest expected error since we are simply trying to predict win or loss using all of our available variables. We obtained an error rate of 31.34%. This is a fairly high error rate, but is to be expected since college basketball games have a lot of variance and are difficult to predict.
+
+```{r}
+# Logistic regression model
+glmmodel <- glm(W ~ Average.of.PF + Average.of.Blk + Average.of.Stl + Average.of.TO + Average.of.Ast + Average.of.DR + Average.of.OR + Average.of.FTA + Average.of.FTM + Average.of.FGA3 + Average.of.FGM3 + Average.of.FGA + Average.of.FGM + Average.of.PPG, data = train, family = "binomial")
+
+pred <- predict(glmmodel, train, type = "response")
+
+# Turn predictions from percentage to actual outcome, with 0.5 cutoff
+for(i in 1:length(pred)){
+    if(pred[i]>0.5){
+        pred[i] <- 1
+    } else {
+        pred[i] <- 0
+    }
+}
+trainError <- table(pred, train$W)
+
+# Train error
+1 - sum(diag(trainError))/sum(trainError)
+```
+
+```{r, include = FALSE}
+tourney <- read.csv("MNCAATourneyCompactResults.csv")
+tourney_2019 <- tourney[tourney$Season == 2019,]
+```
+
+```{r, include = FALSE}
+# Data manipulation to add statistic differences to the March Madness Tournament
+for(i in 1:nrow(tourney_2019)){
+    tourney_2019$Average.of.LPF[i] <- (((s2019$Average.of.LPF[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LPF[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LBlk[i] <- (((s2019$Average.of.LBlk[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LBlk[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LStl[i] <- (((s2019$Average.of.LStl[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LStl[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LTO[i] <- (((s2019$Average.of.LTO[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LTO[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LAst[i] <- (((s2019$Average.of.LAst[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LAst[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LDR[i] <- (((s2019$Average.of.LDR[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LDR[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LOR[i] <- (((s2019$Average.of.LOR[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LOR[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LFTA[i] <- (((s2019$Average.of.LFTA[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LFTA[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LFTM[i] <- (((s2019$Average.of.LFTM[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LFTM[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LFGA3[i] <- (((s2019$Average.of.LFGA3[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LFGA3[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LFGM3[i] <- (((s2019$Average.of.LFGM3[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LFGM3[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LFGA[i] <- (((s2019$Average.of.LFGA[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LFGA[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LFGM[i] <- (((s2019$Average.of.LFGM[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LFGM[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.NumOT[i] <- (((s2019$Average.of.NumOT[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.NumOT[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LScore[i] <- (((s2019$Average.of.LScore[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LScore[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WScore[i] <- (((s2019$Average.of.WScore[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WScore[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.NumOT.1[i] <- (((s2019$Average.of.NumOT.1[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.NumOT.1[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WFGM[i] <- (((s2019$Average.of.WFGM[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WFGM[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WFGA[i] <- (((s2019$Average.of.WFGA[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WFGA[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WFGM3[i] <- (((s2019$Average.of.WFGM3[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WFGM3[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WFGA3[i] <- (((s2019$Average.of.WFGA3[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WFGA3[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WFTM[i] <- (((s2019$Average.of.WFTM[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WFTM[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WFTA[i] <- (((s2019$Average.of.WFTA[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WFTA[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WOR[i] <- (((s2019$Average.of.WOR[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WOR[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WDR[i] <- (((s2019$Average.of.WDR[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WDR[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WAst[i] <- (((s2019$Average.of.WAst[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WAst[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WTO[i] <- (((s2019$Average.of.WTO[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WTO[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WStl[i] <- (((s2019$Average.of.WStl[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WStl[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WBlk[i] <- (((s2019$Average.of.WBlk[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WBlk[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WPF[i] <- (((s2019$Average.of.WPF[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WPF[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.PF[i] <- (((s2019$Average.of.PF[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.PF[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.Blk[i] <- (((s2019$Average.of.Blk[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.Blk[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.Stl[i] <- (((s2019$Average.of.Stl[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.Stl[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.TO[i] <- (((s2019$Average.of.TO[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.TO[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.Ast[i] <- (((s2019$Average.of.Ast[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.Ast[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.DR[i] <- (((s2019$Average.of.DR[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.DR[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.OR[i] <- (((s2019$Average.of.OR[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.OR[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.FTA[i] <- (((s2019$Average.of.FTA[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.FTA[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.FTM[i] <- (((s2019$Average.of.FTM[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.FTM[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.FGA3[i] <- (((s2019$Average.of.FGA3[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.FGA3[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.FGM3[i] <- (((s2019$Average.of.FGM3[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.FGM3[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.FGA[i] <- (((s2019$Average.of.FGA[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.FGA[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.FGM[i] <- (((s2019$Average.of.FGM[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.FGM[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.PPG[i] <- (((s2019$Average.of.PPG[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.PPG[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$W.Per[i] <- (((s2019$W.Per[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$W.Per[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+}
+
+tourney_2019$W <- 1
+```
+
+```{r}
+testpred <- predict(glmmodel, tourney_2019, type = "response")
+# Change predictions to 1 for > 50% win, 0 for < 50% win
+for(i in 1:length(testpred)){
+    if(testpred[i]>0.5){
+        testpred[i] <- 1
+    } else {
+        testpred[i] <- 0
+    }
+}
+
+error <- table(testpred, tourney_2019$W)
+# Test error on NCAA Tournament
+(error[1,]/(error[1,] + error[2,]))
+```
+
+# Decision Tree
+
+We also decided to fit a Decision Tree model because splitting our response variable based on key variables might be able to get us better results. After pruning the tree using Cross-Validation, and we get the lowest standard deviation by reducing our tree to size four. The model splits on the difference of Average Points Per Game, and predicts a team to win if they average more than 1.8 PPG than their opponent, and to lose if they average less than 1.8 PPG than their opponent. Using this Decision Tree model, we obtained a test error rate of 53.73%, significantly less accurate than our Logistic Regression model and below the random guess threshold, so we decided that Decisions Trees would not be a good fit for predicting our response variable.
+
+```{r, include = FALSE}
+library(randomForest)
+library(gbm)
+library(ISLR)
+library(tree)
+```
+
+```{r}
+train$W <- as.factor(train$W)
+tree.s2019 = tree(W ~ Average.of.PF + Average.of.Blk + Average.of.Stl + Average.of.TO + Average.of.Ast + Average.of.DR + Average.of.OR + Average.of.FTA + Average.of.FTM + Average.of.FGA3 + Average.of.FGM3 + Average.of.FGA + Average.of.FGM + Average.of.PPG, data = train)
+
+tree.cv = cv.tree(tree.s2019, FUN=prune.misclass, K=10)
+tree.cv
+```
+
+Since the lowest standard deviation is at size 4, we prune for size 4.
+
+```{r}
+tree.prune = prune.misclass(tree.s2019, best=4)
+
+tree.err = table(treePred=predict(tree.prune, newdata=tourney_2019, type="class"),truth=tourney_2019$W)
+# Tree test error
+(tree.err[1,]/(tree.err[1,] + tree.err[2,]))
+```
+
+```{r}
+# Plot of decision tree
+plot(tree.prune)
+text(tree.prune)
+```
+
+# Random Forest
+
+We decided to fit a Random Forest model next because we had a lot of variables in our dataset and want to use Cross-Validation to reduce our number of variables. We decided to use 500 trees and set our mtry parameter to be 4 because for classification we use $\sqrt{p}$ and $\sqrt{14} \approx 4$.   We obtained an error rate of 35.82%
+
+```{r}
+# Random Forest, m = 4 since m is sqrt(p) for random forest and sqrt(14) ~ 4
+rf.s2019 = randomForest(W ~ Average.of.PF + Average.of.Blk + Average.of.Stl + Average.of.TO + Average.of.Ast + Average.of.DR + Average.of.OR + Average.of.FTA + Average.of.FTM + Average.of.FGA3 + Average.of.FGM3 + Average.of.FGA + Average.of.FGM + Average.of.PPG, data=train, mtry=4, ntree=500, importance=TRUE)
+rf.s2019
+```
+
+```{r}
+yhat.rf = predict (rf.s2019, newdata = tourney_2019)
+rf.err = table(pred = yhat.rf, truth = tourney_2019$W)
+# Random Forest Test Error
+(rf.err[1,]/(rf.err[1,] + rf.err[2,]))
+```
+
+Variable Importance
+```{r}
+importance(rf.s2019)
+```
+
+```{r}
+varImpPlot(rf.s2019)
+```
+
+We see that Point Per Game and Turnovers are the most important variables, just like we saw in our initial data exploration. 
+
+# Boosting
+
+We also fit a gbm (Boosting) model to compare to our Random Forest model. We decided to use 500 trees and our interaction depth to be 4. This provided us with an error rate of 35.82%, which is the same as the error rate from our Random Forest model.
+
+```{r}
+boost.s2019 = gbm((unclass(W)-1) ~ Average.of.PF + Average.of.Blk + Average.of.Stl + Average.of.TO + Average.of.Ast + Average.of.DR + Average.of.OR + Average.of.FTA + Average.of.FTM + Average.of.FGA3 + Average.of.FGM3 + Average.of.FGA + Average.of.FGM + Average.of.PPG, data=train,distribution="bernoulli", n.trees=500, interaction.depth=4)
+summary(boost.s2019)
+```
+
+```{r}
+yhat.boost = predict(boost.s2019, newdata = tourney_2019, n.trees=500)
+boost.err = table(pred = yhat.rf, truth = tourney_2019$W)
+(boost.err[1,]/(boost.err[1,] + boost.err[2,]))
+```
+
+# K Nearest Neighbors 
+
+We decided to try a K Nearest Neighbor model because KNN models tend to work well with classification prediction. We used Leave One Out Cross Validation to select the optimal value of K.  We obtained an error rate of 32.83%. Our KNN model performed fairly well compared to our previous models but still slightly more inaccurate compared to our Logistic Regression model.
+
+```{r}
+library(class)
+YTrain <- train$W
+XTrain <- train %>% select(Average.of.PF, Average.of.Blk , Average.of.Stl , Average.of.TO , Average.of.Ast , Average.of.DR , Average.of.OR ,  Average.of.FTA ,  Average.of.FTM ,  Average.of.FGA3 , Average.of.FGM3 , Average.of.FGA , Average.of.FGM , Average.of.PPG)
+XTest <- tourney_2019 %>% select(Average.of.PF, Average.of.Blk , Average.of.Stl , Average.of.TO , Average.of.Ast , Average.of.DR , Average.of.OR ,  Average.of.FTA ,  Average.of.FTM ,  Average.of.FGA3 , Average.of.FGM3 , Average.of.FGA , Average.of.FGM , Average.of.PPG)
+
+trainpred = knn(train=XTrain, test=XTrain, cl=YTrain, k=2)
+# Training Error
+trainError = table(predicted = trainpred, observed=YTrain)
+1 - sum(diag(trainError)/sum(trainError))
+```
+
+```{r}
+testpred <- knn(train = XTrain, test = XTest, cl = YTrain, k = 2)
+testError <- table(predicted = testpred, observed = tourney_2019$W)
+# Test Error
+(testError[1,]/(testError[1,] + testError[2,]))
+```
+
+LOOCV for K Nearest Neighbors
+```{r}
+# Code from Lab on K Nearest Neighbors
+allK = 1:50
+validation.error = NULL
+for (i in allK){ 
+  pred.Yval = knn.cv(train=XTrain, cl=YTrain, k=i) # Predict on the left-out validation set
+  validation.error = c(validation.error, mean(pred.Yval!=YTrain)) # Combine all validation errors
+}
+numneighbor = max(allK[validation.error == min(validation.error)])
+numneighbor
+```
+
+```{r}
+# Get test error rate for CV Selected NN Classifier 
+pred.YTest = knn(train=XTrain, test=XTest, cl=YTrain, k=numneighbor)
+testError = table(predicted=pred.YTest, true= tourney_2019$W)
+(testError[1,]/(testError[1,] + testError[2,]))
+```
+
+# Principal Component Analysis
+
+After trying Principal Component Analysis on our dataset, it became clear that the method was not appropriate. The principal components explained very little proportion of variance. The main principal component explained less than 40% while the others explain less than 20%. We feel that reducing noise was not necessary, especially with such low explanations in the proportion of variance.
+
+```{r}
+compdata <- s2019_corr
+compdata <- compdata[-354,]
+comp <- prcomp(compdata, scale = TRUE)
+comp
+```
+
+```{r}
+comp.var <- comp$sdev ^ 2
+pve <- comp.var/sum(comp.var)
+plot(pve, xlab="Principal Component", ylab="Proportion of Variance Explained ", ylim=c(0,1),type='b')
+```
+
+# Model Selection
+
+```{r}
+Method <- c('LR' , 'DT' , 'KNN' , 'RF' , 'BOOST')
+Test_Error <- c('31.34%','53.73%','32.83%','35.82%','35.82%')
+test.errors <- data.frame(Method,Test_Error)
+test.errors
+```
+
+We arrived at our final model by choosing the classification method that most accurately predicted the NCAA March Madness Tournament results from training on the NCAA Regular Season. We tried a variety of different modeling methods that we believed would most accurately predict our binary response variable. After trying advanced modeling methods such as Random Forest and Boosting, but the Logistic Regression model still had the lowest test error rate of 31.34%.
+
+# Extending Logistic Regression to 2018 Data Set
+
+We tested using logistic regression on the 2018 regular season data set to see if we would get a similar test error rate (on the NCAA Tournament) compared to the 2019 data set. 
+
+```{r, include = FALSE}
+reg_season_2018 <- reg_season[reg_season$Season == 2018,]
+
+reg_season_2018_matchups <- data.frame("WTeamID" = reg_season_2018$WTeamID,"LTeamID" = reg_season_2018$LTeamID)
+```
+
+```{r, include = FALSE}
+reg_season_2018_matchups$W <- 1
+ 
+for(i in 1:nrow(reg_season_2018_matchups)){
+
+    reg_season_2018_matchups$Average.of.LPF[i] <- (((s2018$Average.of.LPF[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.LPF[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.LBlk[i] <- (((s2018$Average.of.LBlk[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.LBlk[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.LStl[i] <- (((s2018$Average.of.LStl[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.LStl[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.LTO[i] <- (((s2018$Average.of.LTO[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.LTO[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.LAst[i] <- (((s2018$Average.of.LAst[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.LAst[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.LDR[i] <- (((s2018$Average.of.LDR[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.LDR[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.LOR[i] <- (((s2018$Average.of.LOR[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.LOR[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.LFTA[i] <- (((s2018$Average.of.LFTA[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.LFTA[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.LFTM[i] <- (((s2018$Average.of.LFTM[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.LFTM[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.LFGA3[i] <- (((s2018$Average.of.LFGA3[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.LFGA3[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.LFGM3[i] <- (((s2018$Average.of.LFGM3[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.LFGM3[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.LFGA[i] <- (((s2018$Average.of.LFGA[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.LFGA[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.LFGM[i] <- (((s2018$Average.of.LFGM[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.LFGM[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.NumOT[i] <- (((s2018$Average.of.NumOT[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.NumOT[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.LScore[i] <- (((s2018$Average.of.LScore[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.LScore[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.WScore[i] <- (((s2018$Average.of.WScore[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.WScore[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.NumOT.1[i] <- (((s2018$Average.of.NumOT.1[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.NumOT.1[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.WFGM[i] <- (((s2018$Average.of.WFGM[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.WFGM[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.WFGA[i] <- (((s2018$Average.of.WFGA[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.WFGA[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.WFGM3[i] <- (((s2018$Average.of.WFGM3[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.WFGM3[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.WFGA3[i] <- (((s2018$Average.of.WFGA3[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.WFGA3[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.WFTM[i] <- (((s2018$Average.of.WFTM[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.WFTM[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.WFTA[i] <- (((s2018$Average.of.WFTA[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.WFTA[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.WOR[i] <- (((s2018$Average.of.WOR[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.WOR[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.WDR[i] <- (((s2018$Average.of.WDR[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.WDR[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.WAst[i] <- (((s2018$Average.of.WAst[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.WAst[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.WTO[i] <- (((s2018$Average.of.WTO[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.WTO[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.WStl[i] <- (((s2018$Average.of.WStl[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.WStl[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.WBlk[i] <- (((s2018$Average.of.WBlk[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.WBlk[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.WPF[i] <- (((s2018$Average.of.WPF[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.WPF[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.PF[i] <- (((s2018$Average.of.PF[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.PF[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.Blk[i] <- (((s2018$Average.of.Blk[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.Blk[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.Stl[i] <- (((s2018$Average.of.Stl[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.Stl[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.TO[i] <- (((s2018$Average.of.TO[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.TO[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.Ast[i] <- (((s2018$Average.of.Ast[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.Ast[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.DR[i] <- (((s2018$Average.of.DR[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.DR[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.OR[i] <- (((s2018$Average.of.OR[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.OR[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.FTA[i] <- (((s2018$Average.of.FTA[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.FTA[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.FTM[i] <- (((s2018$Average.of.FTM[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.FTM[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.FGA3[i] <- (((s2018$Average.of.FGA3[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.FGA3[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.FGM3[i] <- (((s2018$Average.of.FGM3[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.FGM3[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.FGA[i] <- (((s2018$Average.of.FGA[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.FGA[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.FGM[i] <- (((s2018$Average.of.FGM[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.FGM[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$Average.of.PPG[i] <- (((s2018$Average.of.PPG[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$Average.of.PPG[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+    reg_season_2018_matchups$W.Per[i] <- (((s2018$W.Per[s2018$Team.ID ==reg_season_2018_matchups$WTeamID[i]])- (s2018$W.Per[s2018$Team.ID ==reg_season_2018_matchups$LTeamID[i]]))[1])
+
+}
+```
+
+```{r, include = FALSE}
+trainrows <- sample(nrow(reg_season_2018_matchups), nrow(reg_season_2018_matchups) * 0.5)
+
+winset <- reg_season_2018_matchups[trainrows,]
+
+loseset <- reg_season_2018_matchups[-trainrows,]
+
+# Invert differences in statistics
+loseset <- loseset %>%
+
+    mutate_if(is.numeric, funs(. * -1))
+
+# Change actual outcome to loss
+
+loseset$W <- 0
+
+train <- rbind(winset, loseset)
+```
+
+```{r}
+glmmodel <- glm(W ~ Average.of.PF + Average.of.Blk + Average.of.Stl + Average.of.TO + Average.of.Ast + Average.of.DR + Average.of.OR + Average.of.FTA + Average.of.FTM + Average.of.FGA3 + Average.of.FGM3 + Average.of.FGA + Average.of.FGM + Average.of.PPG, data = train, family = "binomial")
+
+pred <- predict(glmmodel, train, type = "response")
+
+for(i in 1:length(pred)){
+    if(pred[i]>0.5){
+        pred[i] <- 1
+    } else {
+        pred[i] <- 0
+    }
+}
+
+trainError <- table(pred, train$W)
+
+# Train error
+1 - sum(diag(trainError))/sum(trainError)
+```
+
+```{r, include = FALSE}
+tourney <- read.csv("MNCAATourneyCompactResults.csv")
+tourney_2018 <- tourney[tourney$Season == 2018,]
+```
+
+```{r, include = FALSE}
+for(i in 1:nrow(tourney_2018)){
+
+    tourney_2018$Average.of.LPF[i] <- (((s2018$Average.of.LPF[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LPF[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LBlk[i] <- (((s2018$Average.of.LBlk[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LBlk[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LStl[i] <- (((s2018$Average.of.LStl[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LStl[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LTO[i] <- (((s2018$Average.of.LTO[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LTO[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LAst[i] <- (((s2018$Average.of.LAst[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LAst[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LDR[i] <- (((s2018$Average.of.LDR[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LDR[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LOR[i] <- (((s2018$Average.of.LOR[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LOR[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LFTA[i] <- (((s2018$Average.of.LFTA[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LFTA[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LFTM[i] <- (((s2018$Average.of.LFTM[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LFTM[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LFGA3[i] <- (((s2018$Average.of.LFGA3[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LFGA3[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LFGM3[i] <- (((s2018$Average.of.LFGM3[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LFGM3[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LFGA[i] <- (((s2018$Average.of.LFGA[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LFGA[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LFGM[i] <- (((s2018$Average.of.LFGM[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LFGM[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.NumOT[i] <- (((s2018$Average.of.NumOT[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.NumOT[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LScore[i] <- (((s2018$Average.of.LScore[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LScore[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WScore[i] <- (((s2018$Average.of.WScore[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WScore[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.NumOT.1[i] <- (((s2018$Average.of.NumOT.1[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.NumOT.1[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WFGM[i] <- (((s2018$Average.of.WFGM[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WFGM[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WFGA[i] <- (((s2018$Average.of.WFGA[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WFGA[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WFGM3[i] <- (((s2018$Average.of.WFGM3[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WFGM3[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WFGA3[i] <- (((s2018$Average.of.WFGA3[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WFGA3[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WFTM[i] <- (((s2018$Average.of.WFTM[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WFTM[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WFTA[i] <- (((s2018$Average.of.WFTA[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WFTA[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WOR[i] <- (((s2018$Average.of.WOR[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WOR[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WDR[i] <- (((s2018$Average.of.WDR[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WDR[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WAst[i] <- (((s2018$Average.of.WAst[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WAst[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WTO[i] <- (((s2018$Average.of.WTO[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WTO[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WStl[i] <- (((s2018$Average.of.WStl[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WStl[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WBlk[i] <- (((s2018$Average.of.WBlk[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WBlk[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WPF[i] <- (((s2018$Average.of.WPF[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WPF[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.PF[i] <- (((s2018$Average.of.PF[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.PF[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.Blk[i] <- (((s2018$Average.of.Blk[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.Blk[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.Stl[i] <- (((s2018$Average.of.Stl[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.Stl[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.TO[i] <- (((s2018$Average.of.TO[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.TO[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.Ast[i] <- (((s2018$Average.of.Ast[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.Ast[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.DR[i] <- (((s2018$Average.of.DR[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.DR[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.OR[i] <- (((s2018$Average.of.OR[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.OR[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.FTA[i] <- (((s2018$Average.of.FTA[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.FTA[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.FTM[i] <- (((s2018$Average.of.FTM[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.FTM[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.FGA3[i] <- (((s2018$Average.of.FGA3[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.FGA3[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.FGM3[i] <- (((s2018$Average.of.FGM3[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.FGM3[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.FGA[i] <- (((s2018$Average.of.FGA[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.FGA[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.FGM[i] <- (((s2018$Average.of.FGM[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.FGM[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.PPG[i] <- (((s2018$Average.of.PPG[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.PPG[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$W.Per[i] <- (((s2018$W.Per[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$W.Per[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+}
+tourney_2018$W <- 1
+```
+
+```{r}
+testpred <- predict(glmmodel, tourney_2018, type = "response")
+
+# Change predictions to 1 for > 50% win, 0 for < 50% win
+for(i in 1:length(testpred)){
+    if(testpred[i]>0.5){
+        testpred[i] <- 1
+    } else {
+        testpred[i] <- 0
+    }
+}
+
+error <- table(testpred, tourney_2018$W)
+
+# Train error on NCAA Tournament
+(error[1,]/(error[1,] + error[2,]))
+```
+
+The test error is 34.33%, slightly higher but still similar to our test error for the 2019 data set. 
+
+# Conclusion
+
+After testing several candidate models, in the end we chose the Logistic Regression model because it gave us the lowest test error and was easy to interpret. This model produced a test error of 31.34%, which was more accurate in predicting tournament games than decision trees and KNN. 
+
+In the future, we would like to predict this year's March Madness tournament. Unfortunately, the tournament seeds and teams are set on March 15 at 4 p.m. PST. Therefore, we will not be able to predict the results in time for the project due date. If you would like to know our 2020 predictions, feel free to contact us.
+
+In addition, we filled out the 2018 and 2019 predictions from our backets. The brackets are below. The red boxes are incorrect predictions, while the rest are correctly predicted. 
+
+![2018 NCAA Tournament Predictions](predictions2018.png)
+
+![2019 NCAA Tournament Predictions](predictions2019.png)
+
+\newpage
+
+# Appendix
+
+Initial data manipulation for both 2019 and 2018
+
+```{r}
+# Create an average of each statistic by combining win statistic and loss statistics 
+s2019$Average.of.PF  <- (((s2019$Losses * s2019$Average.of.LPF) + (s2019$Wins * s2019$Average.of.WPF))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.Blk <- (((s2019$Losses * s2019$Average.of.LBlk) + (s2019$Wins * s2019$Average.of.WBlk))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.Stl <- (((s2019$Losses * s2019$Average.of.LStl) + (s2019$Wins * s2019$Average.of.WStl))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.TO <- (((s2019$Losses * s2019$Average.of.LTO) + (s2019$Wins * s2019$Average.of.WTO))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.Ast <- (((s2019$Losses * s2019$Average.of.LAst) + (s2019$Wins * s2019$Average.of.WAst))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.DR <- (((s2019$Losses * s2019$Average.of.LDR) + (s2019$Wins * s2019$Average.of.WDR))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.OR <- (((s2019$Losses * s2019$Average.of.LOR) + (s2019$Wins * s2019$Average.of.WOR))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.FTA <- (((s2019$Losses * s2019$Average.of.LFTA) + (s2019$Wins * s2019$Average.of.WFTA))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.FTM <- (((s2019$Losses * s2019$Average.of.LFTM) + (s2019$Wins * s2019$Average.of.WFTM))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.FGA3 <- (((s2019$Losses * s2019$Average.of.LFGA3) + (s2019$Wins * s2019$Average.of.WFGA3))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.FGM3 <- (((s2019$Losses * s2019$Average.of.LFGM3) + (s2019$Wins * s2019$Average.of.WFGM3))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.FGA <- (((s2019$Losses * s2019$Average.of.LFGA) + (s2019$Wins * s2019$Average.of.WFGA))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.FGM <- (((s2019$Losses * s2019$Average.of.LFGM) + (s2019$Wins * s2019$Average.of.WFGM))/(s2019$Wins + s2019$Losses))
+s2019$Average.of.PPG  <- (((s2019$Losses * s2019$Average.of.LScore) + (s2019$Wins * s2019$Average.of.WScore))/(s2019$Wins + s2019$Losses))
+s2019$W.Per  <- (s2019$Wins)/(s2019$Wins + s2019$Losses)
+```
+
+```{r}
+s2018$Average.of.PF  <- (((s2018$Losses * s2018$Average.of.LPF) + (s2018$Wins * s2018$Average.of.WPF))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.Blk <- (((s2018$Losses * s2018$Average.of.LBlk) + (s2018$Wins * s2018$Average.of.WBlk))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.Stl <- (((s2018$Losses * s2018$Average.of.LStl) + (s2018$Wins * s2018$Average.of.WStl))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.TO <- (((s2018$Losses * s2018$Average.of.LTO) + (s2018$Wins * s2018$Average.of.WTO))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.Ast <- (((s2018$Losses * s2018$Average.of.LAst) + (s2018$Wins * s2018$Average.of.WAst))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.DR <- (((s2018$Losses * s2018$Average.of.LDR) + (s2018$Wins * s2018$Average.of.WDR))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.OR <- (((s2018$Losses * s2018$Average.of.LOR) + (s2018$Wins * s2018$Average.of.WOR))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.FTA <- (((s2018$Losses * s2018$Average.of.LFTA) + (s2018$Wins * s2018$Average.of.WFTA))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.FTM <- (((s2018$Losses * s2018$Average.of.LFTM) + (s2018$Wins * s2018$Average.of.WFTM))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.FGA3 <- (((s2018$Losses * s2018$Average.of.LFGA3) + (s2018$Wins * s2018$Average.of.WFGA3))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.FGM3 <- (((s2018$Losses * s2018$Average.of.LFGM3) + (s2018$Wins * s2018$Average.of.WFGM3))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.FGA <- (((s2018$Losses * s2018$Average.of.LFGA) + (s2018$Wins * s2018$Average.of.WFGA))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.FGM <- (((s2018$Losses * s2018$Average.of.LFGM) + (s2018$Wins * s2018$Average.of.WFGM))/(s2018$Wins + s2018$Losses))
+s2018$Average.of.PPG  <- (((s2018$Losses * s2018$Average.of.LScore) + (s2018$Wins * s2018$Average.of.WScore))/(s2018$Wins + s2018$Losses))
+s2018$W.Per  <- (s2018$Wins)/(s2018$Wins + s2018$Losses)
+```
+
+Getting difference of statistics between teams for regular season matches
+
+```{r}
+# Set response variable to 1, since in data set all are wins. 
+reg_season_2019_matchups$W <- 1
+
+# Get difference in statistics between the two teams for each match in the regular season
+for(i in 1:nrow(reg_season_2019_matchups)){
+    reg_season_2019_matchups$Average.of.LPF[i] <- (((s2019$Average.of.LPF[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LPF[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LBlk[i] <- (((s2019$Average.of.LBlk[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LBlk[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LStl[i] <- (((s2019$Average.of.LStl[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LStl[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LTO[i] <- (((s2019$Average.of.LTO[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LTO[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LAst[i] <- (((s2019$Average.of.LAst[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LAst[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LDR[i] <- (((s2019$Average.of.LDR[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LDR[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LOR[i] <- (((s2019$Average.of.LOR[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LOR[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LFTA[i] <- (((s2019$Average.of.LFTA[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LFTA[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LFTM[i] <- (((s2019$Average.of.LFTM[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LFTM[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LFGA3[i] <- (((s2019$Average.of.LFGA3[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LFGA3[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LFGM3[i] <- (((s2019$Average.of.LFGM3[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LFGM3[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LFGA[i] <- (((s2019$Average.of.LFGA[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LFGA[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LFGM[i] <- (((s2019$Average.of.LFGM[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LFGM[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.NumOT[i] <- (((s2019$Average.of.NumOT[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.NumOT[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.LScore[i] <- (((s2019$Average.of.LScore[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.LScore[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WScore[i] <- (((s2019$Average.of.WScore[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WScore[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.NumOT.1[i] <- (((s2019$Average.of.NumOT.1[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.NumOT.1[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WFGM[i] <- (((s2019$Average.of.WFGM[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WFGM[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WFGA[i] <- (((s2019$Average.of.WFGA[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WFGA[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WFGM3[i] <- (((s2019$Average.of.WFGM3[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WFGM3[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WFGA3[i] <- (((s2019$Average.of.WFGA3[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WFGA3[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WFTM[i] <- (((s2019$Average.of.WFTM[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WFTM[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WFTA[i] <- (((s2019$Average.of.WFTA[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WFTA[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WOR[i] <- (((s2019$Average.of.WOR[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WOR[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WDR[i] <- (((s2019$Average.of.WDR[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WDR[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WAst[i] <- (((s2019$Average.of.WAst[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WAst[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WTO[i] <- (((s2019$Average.of.WTO[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WTO[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WStl[i] <- (((s2019$Average.of.WStl[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WStl[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WBlk[i] <- (((s2019$Average.of.WBlk[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WBlk[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.WPF[i] <- (((s2019$Average.of.WPF[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.WPF[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.PF[i] <- (((s2019$Average.of.PF[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.PF[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.Blk[i] <- (((s2019$Average.of.Blk[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.Blk[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.Stl[i] <- (((s2019$Average.of.Stl[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.Stl[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.TO[i] <- (((s2019$Average.of.TO[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.TO[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.Ast[i] <- (((s2019$Average.of.Ast[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.Ast[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.DR[i] <- (((s2019$Average.of.DR[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.DR[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.OR[i] <- (((s2019$Average.of.OR[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.OR[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.FTA[i] <- (((s2019$Average.of.FTA[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.FTA[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.FTM[i] <- (((s2019$Average.of.FTM[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.FTM[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.FGA3[i] <- (((s2019$Average.of.FGA3[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.FGA3[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.FGM3[i] <- (((s2019$Average.of.FGM3[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.FGM3[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.FGA[i] <- (((s2019$Average.of.FGA[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.FGA[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.FGM[i] <- (((s2019$Average.of.FGM[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.FGM[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$Average.of.PPG[i] <- (((s2019$Average.of.PPG[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$Average.of.PPG[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+    reg_season_2019_matchups$W.Per[i] <- (((s2019$W.Per[s2019$Team.ID ==reg_season_2019_matchups$WTeamID[i]])- (s2019$W.Per[s2019$Team.ID ==reg_season_2019_matchups$LTeamID[i]]))[1])
+}
+```
+
+Building train set for all methods
+
+```{r}
+# Randomly change half of outcomes to losses and invert statistic differences so model works appropriately (so that we are not modeling on outcome of all wins)
+trainrows <- sample(nrow(reg_season_2019_matchups), nrow(reg_season_2019_matchups) * 0.5)
+winset <- reg_season_2019_matchups[trainrows,]
+loseset <- reg_season_2019_matchups[-trainrows,]
+# Invert differences in statistics
+
+loseset <- loseset %>%
+    mutate_if(is.numeric, funs(. * -1))
+# Change actual outcome to loss
+loseset$W <- 0
+train <- rbind(winset, loseset)
+```
+
+2019 Tourney Data Manipulation
+
+```{r}
+tourney <- read.csv("MNCAATourneyCompactResults.csv")
+tourney_2019 <- tourney[tourney$Season == 2019,]
+```
+
+```{r}
+# Data manipulation to add statistic differences to the March Madness Tournament
+for(i in 1:nrow(tourney_2019)){
+    tourney_2019$Average.of.LPF[i] <- (((s2019$Average.of.LPF[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LPF[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LBlk[i] <- (((s2019$Average.of.LBlk[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LBlk[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LStl[i] <- (((s2019$Average.of.LStl[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LStl[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LTO[i] <- (((s2019$Average.of.LTO[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LTO[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LAst[i] <- (((s2019$Average.of.LAst[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LAst[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LDR[i] <- (((s2019$Average.of.LDR[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LDR[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LOR[i] <- (((s2019$Average.of.LOR[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LOR[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LFTA[i] <- (((s2019$Average.of.LFTA[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LFTA[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LFTM[i] <- (((s2019$Average.of.LFTM[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LFTM[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LFGA3[i] <- (((s2019$Average.of.LFGA3[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LFGA3[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LFGM3[i] <- (((s2019$Average.of.LFGM3[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LFGM3[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LFGA[i] <- (((s2019$Average.of.LFGA[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LFGA[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LFGM[i] <- (((s2019$Average.of.LFGM[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LFGM[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.NumOT[i] <- (((s2019$Average.of.NumOT[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.NumOT[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.LScore[i] <- (((s2019$Average.of.LScore[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.LScore[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WScore[i] <- (((s2019$Average.of.WScore[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WScore[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.NumOT.1[i] <- (((s2019$Average.of.NumOT.1[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.NumOT.1[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WFGM[i] <- (((s2019$Average.of.WFGM[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WFGM[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WFGA[i] <- (((s2019$Average.of.WFGA[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WFGA[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WFGM3[i] <- (((s2019$Average.of.WFGM3[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WFGM3[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WFGA3[i] <- (((s2019$Average.of.WFGA3[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WFGA3[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WFTM[i] <- (((s2019$Average.of.WFTM[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WFTM[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WFTA[i] <- (((s2019$Average.of.WFTA[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WFTA[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WOR[i] <- (((s2019$Average.of.WOR[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WOR[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WDR[i] <- (((s2019$Average.of.WDR[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WDR[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WAst[i] <- (((s2019$Average.of.WAst[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WAst[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WTO[i] <- (((s2019$Average.of.WTO[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WTO[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WStl[i] <- (((s2019$Average.of.WStl[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WStl[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WBlk[i] <- (((s2019$Average.of.WBlk[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WBlk[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.WPF[i] <- (((s2019$Average.of.WPF[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.WPF[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.PF[i] <- (((s2019$Average.of.PF[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.PF[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.Blk[i] <- (((s2019$Average.of.Blk[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.Blk[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.Stl[i] <- (((s2019$Average.of.Stl[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.Stl[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.TO[i] <- (((s2019$Average.of.TO[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.TO[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.Ast[i] <- (((s2019$Average.of.Ast[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.Ast[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.DR[i] <- (((s2019$Average.of.DR[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.DR[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.OR[i] <- (((s2019$Average.of.OR[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.OR[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.FTA[i] <- (((s2019$Average.of.FTA[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.FTA[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.FTM[i] <- (((s2019$Average.of.FTM[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.FTM[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.FGA3[i] <- (((s2019$Average.of.FGA3[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.FGA3[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.FGM3[i] <- (((s2019$Average.of.FGM3[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.FGM3[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.FGA[i] <- (((s2019$Average.of.FGA[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.FGA[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.FGM[i] <- (((s2019$Average.of.FGM[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.FGM[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$Average.of.PPG[i] <- (((s2019$Average.of.PPG[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$Average.of.PPG[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+    tourney_2019$W.Per[i] <- (((s2019$W.Per[s2019$Team.ID ==tourney_2019$WTeamID[i]])- (s2019$W.Per[s2019$Team.ID ==tourney_2019$LTeamID[i]]))[1])
+}
+
+tourney_2019$W <- 1
+```
+
+2018 Tourney Data Manipulation
+
+```{r}
+tourney <- read.csv("MNCAATourneyCompactResults.csv")
+tourney_2018 <- tourney[tourney$Season == 2018,]
+```
+
+```{r}
+for(i in 1:nrow(tourney_2018)){
+
+    tourney_2018$Average.of.LPF[i] <- (((s2018$Average.of.LPF[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LPF[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LBlk[i] <- (((s2018$Average.of.LBlk[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LBlk[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LStl[i] <- (((s2018$Average.of.LStl[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LStl[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LTO[i] <- (((s2018$Average.of.LTO[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LTO[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LAst[i] <- (((s2018$Average.of.LAst[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LAst[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LDR[i] <- (((s2018$Average.of.LDR[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LDR[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LOR[i] <- (((s2018$Average.of.LOR[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LOR[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LFTA[i] <- (((s2018$Average.of.LFTA[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LFTA[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LFTM[i] <- (((s2018$Average.of.LFTM[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LFTM[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LFGA3[i] <- (((s2018$Average.of.LFGA3[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LFGA3[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LFGM3[i] <- (((s2018$Average.of.LFGM3[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LFGM3[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LFGA[i] <- (((s2018$Average.of.LFGA[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LFGA[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LFGM[i] <- (((s2018$Average.of.LFGM[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LFGM[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.NumOT[i] <- (((s2018$Average.of.NumOT[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.NumOT[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.LScore[i] <- (((s2018$Average.of.LScore[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.LScore[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WScore[i] <- (((s2018$Average.of.WScore[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WScore[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.NumOT.1[i] <- (((s2018$Average.of.NumOT.1[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.NumOT.1[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WFGM[i] <- (((s2018$Average.of.WFGM[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WFGM[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WFGA[i] <- (((s2018$Average.of.WFGA[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WFGA[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WFGM3[i] <- (((s2018$Average.of.WFGM3[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WFGM3[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WFGA3[i] <- (((s2018$Average.of.WFGA3[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WFGA3[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WFTM[i] <- (((s2018$Average.of.WFTM[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WFTM[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WFTA[i] <- (((s2018$Average.of.WFTA[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WFTA[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WOR[i] <- (((s2018$Average.of.WOR[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WOR[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WDR[i] <- (((s2018$Average.of.WDR[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WDR[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WAst[i] <- (((s2018$Average.of.WAst[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WAst[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WTO[i] <- (((s2018$Average.of.WTO[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WTO[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WStl[i] <- (((s2018$Average.of.WStl[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WStl[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WBlk[i] <- (((s2018$Average.of.WBlk[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WBlk[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.WPF[i] <- (((s2018$Average.of.WPF[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.WPF[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.PF[i] <- (((s2018$Average.of.PF[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.PF[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.Blk[i] <- (((s2018$Average.of.Blk[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.Blk[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.Stl[i] <- (((s2018$Average.of.Stl[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.Stl[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.TO[i] <- (((s2018$Average.of.TO[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.TO[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.Ast[i] <- (((s2018$Average.of.Ast[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.Ast[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.DR[i] <- (((s2018$Average.of.DR[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.DR[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.OR[i] <- (((s2018$Average.of.OR[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.OR[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.FTA[i] <- (((s2018$Average.of.FTA[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.FTA[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.FTM[i] <- (((s2018$Average.of.FTM[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.FTM[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.FGA3[i] <- (((s2018$Average.of.FGA3[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.FGA3[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.FGM3[i] <- (((s2018$Average.of.FGM3[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.FGM3[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.FGA[i] <- (((s2018$Average.of.FGA[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.FGA[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.FGM[i] <- (((s2018$Average.of.FGM[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.FGM[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$Average.of.PPG[i] <- (((s2018$Average.of.PPG[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$Average.of.PPG[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+    tourney_2018$W.Per[i] <- (((s2018$W.Per[s2018$Team.ID ==tourney_2018$WTeamID[i]])- (s2018$W.Per[s2018$Team.ID ==tourney_2018$LTeamID[i]]))[1])
+
+}
+tourney_2018$W <- 1
+```
